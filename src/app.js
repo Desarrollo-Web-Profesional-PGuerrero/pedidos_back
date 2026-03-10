@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import { pedidosRoutes } from "./rutas/pedidos.js";
+import { usuarioRoutes } from './rutas/usuarios.js'
 // Crear la aplicación Express
 const app = express();
 // Configurar middlewares
@@ -14,4 +15,6 @@ pedidosRoutes(app);
 app.get("/", (req, res) => {
   res.send("Hola from Express!");
 });
+
+usuarioRoutes(app)
 export { app };
