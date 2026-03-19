@@ -32,3 +32,14 @@ export async function getUsuarioInfoById(userId) {
     return { username: userId };
   }
 }
+
+// ✅ NUEVA FUNCIÓN: Obtener todos los usuarios
+export async function getAllUsuarios() {
+  try {
+    // Solo devolvemos username y _id, excluimos password
+    const usuarios = await Usuario.find().select('username _id');
+    return usuarios;
+  } catch (err) {
+    throw new Error("Error al obtener usuarios: " + err.message);
+  }
+}

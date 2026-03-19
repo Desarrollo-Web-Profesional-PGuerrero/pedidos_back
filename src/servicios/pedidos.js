@@ -1,23 +1,9 @@
 // servicios/pedidos.js
 import { Pedido } from "../bd/modelos/pedido.js";
-/**
-* Función para crear un nuevo pedido en la base de datos.
-* @param {*} pedido - Objeto que contiene los detalles del pedido
-a crear, incluyendo:
-* - nombre: Nombre del cliente
-* - telefono: Teléfono del cliente (10 dígitos)
-* - fecha_solicitud: Fecha de solicitud del pedido
-* - fecha_envio: Fecha de envío del pedido
-* - total: Total del pedido (opcional, por defecto 0.0)
-* - pagado: Lista de métodos de pago utilizados (opcional)
-* - abono: Monto abonado al pedido (opcional)
-* - comentario: Comentarios adicionales sobre el pedido (opcional)
-* @returns {Promise<Pedido>} - El pedido creado en la base de
-datos.
-*/
+import { Usuario } from "../bd/modelos/usuario.js";
+
 export async function creaPedido({
-  nombre,
-  telefono,
+  cliente,
   fecha_solicitud,
   fecha_envio,
   total,
@@ -25,93 +11,150 @@ export async function creaPedido({
   abono,
   comentario,
 }) {
+  console.log("\n🔍 CREANDO PEDIDO");
+  console.log("   Cliente ID recibido:", cliente);
+  
+  const usuarioExistente = await Usuario.findById(cliente);
+  console.log("   Usuario encontrado:", usuarioExistente ? usuarioExistente.username : "NO EXISTE");
+  
+  if (!usuarioExistente) {
+    throw new Error("El cliente especificado no existe");
+  }
+
   const pedido = new Pedido({
-    nombre,
-    telefono,
+    cliente: cliente,
     fecha_solicitud,
     fecha_envio,
-    total,
-    pagado,
-    abono,
-    comentario,
+    total: total || 0.0,
+    pagado: pagado || [],
+    abono: abono || 0,
+    comentario: comentario || "",
   });
-  return await pedido.save();
+  
+  const pedidoGuardado = await pedido.save();
+  console.log("✅ Pedido guardado con ID:", pedidoGuardado._id.toString().slice(-6));
+  
+  return pedidoGuardado;
 }
-/**
-* Función para obtener una lista de pedidos de la base de datos.
-* @param {*} query Tipo de consulta
-* @param {*} param1 Ordenamiento de la consulta
-* @returns {Promise<Array>} - Una promesa que resuelve en un
-arreglo de pedidos.
-*/
+
 export async function listaPedidos(
   query = {},
   { sortBy = "createdAt", sortOrder = "descending" } = {},
 ) {
-  return await Pedido.find(query).sort({ [sortBy]: sortOrder });
+  console.log("\n🔍 LISTANDO PEDIDOS");
+  console.log("   Query:", JSON.stringify(query));
+  
+  // Ver qué hay en la base de datos SIN populate
+  const pedidosRaw = await Pedido.find(query).lean();
+  console.log("📦 Pedidos en BD (IDs de cliente):");
+  pedidosRaw.forEach((p, i) => {
+    console.log(`   ${i+1}. Pedido: ${p._id.toString().slice(-6)}, cliente ID: ${p.cliente ? p.cliente.toString().slice(-6) : 'null'}`);
+  });
+
+  // Ver los usuarios disponibles
+  const usuarios = await Usuario.find().lean();
+  console.log("👤 Usuarios disponibles:");
+  usuarios.forEach((u, i) => {
+    console.log(`   ${i+1}. ID: ${u._id.toString().slice(-6)}, username: ${u.username}`);
+  });
+
+  // Hacer la consulta CON populate
+  const pedidos = await Pedido.find(query)
+    .populate({
+      path: 'cliente',
+      model: 'usuario',
+      select: 'username _id'
+    })
+    .sort({ [sortBy]: sortOrder })
+    .lean();
+
+  console.log("📦 Resultado final (con populate):");
+  pedidos.forEach((p, i) => {
+    if (p.cliente && typeof p.cliente === 'object' && p.cliente.username) {
+      console.log(`   ${i+1}. Pedido: ${p._id.toString().slice(-6)} -> Cliente: ${p.cliente.username}`);
+    } else if (p.cliente && typeof p.cliente === 'object') {
+      console.log(`   ${i+1}. Pedido: ${p._id.toString().slice(-6)} -> Cliente: [Objeto sin username]`);
+    } else {
+      console.log(`   ${i+1}. Pedido: ${p._id.toString().slice(-6)} -> Cliente: ${p.cliente} (NO POPULATE)`);
+    }
+  });
+
+  return pedidos;
 }
-/**
-* Función para obtener una lista de todos los pedidos de la base
-de datos.
-* @param {*} opciones
-* @returns {Promise<Array>} - Una promesa que resuelve en un
-arreglo de pedidos.
-*/
+
 export async function listaAllPedidos(opciones) {
   return await listaPedidos({}, opciones);
 }
-/**
-* Funcion para obtener una lista de pedidos filt°rados por nombre
-del cliente.
-* @param {*} nombre
-* @param {*} opciones
-* @returns {Promise<Array>} - Una promesa que resuelve en un
-arreglo de pedidos.
-*/
+
 export async function listaPedidosByNombre(nombre, opciones) {
-  return await listaPedidos({ nombre }, opciones);
+  console.log(`\n🔍 BUSCANDO PEDIDOS POR NOMBRE: ${nombre}`);
+  // Esta función necesita buscar por username del cliente
+  // Primero encontramos el usuario por username
+  const usuario = await Usuario.findOne({ username: nombre });
+  if (!usuario) {
+    console.log("   ❌ Usuario no encontrado");
+    return [];
+  }
+  console.log("   ✅ Usuario encontrado, ID:", usuario._id.toString().slice(-6));
+  return await listaPedidos({ cliente: usuario._id }, opciones);
 }
-/**
-* Funcion para obtener una lista de pedidos filtrados por teléfono
-del cliente.
-* @param {*} pagado
-* @param {*} opciones
-* @returns {Promise<Array>} - Una promesa que resuelve en un
-arreglo de pedidos.
-*/
+
 export async function listPedidosByPagado(pagado, opciones) {
-  return await listaPedidos({ pagado }, opciones);
+  console.log(`\n🔍 BUSCANDO PEDIDOS POR MÉTODO DE PAGO: ${pagado}`);
+  return await listaPedidos({ pagado: { $in: [pagado] } }, opciones);
 }
-/**
-* Funcion para obtener un pedido específico por su ID.
-* @param {*} pedidoId Identificador
-* @returns {Promise<Pedido>} - Una promesa que resuelve en el
-pedido encontrado o null si no se encuentra.
-*/
+
 export async function getPedidoById(pedidoId) {
-  return await Pedido.findById(pedidoId);
+  console.log("\n🔍 BUSCANDO PEDIDO POR ID:", pedidoId.slice(-6));
+  
+  const pedido = await Pedido.findById(pedidoId)
+    .populate({
+      path: 'cliente',
+      model: 'usuario',
+      select: 'username _id'
+    })
+    .lean();
+
+  if (pedido) {
+    console.log("✅ Pedido encontrado:");
+    if (pedido.cliente && typeof pedido.cliente === 'object') {
+      console.log(`   Cliente: ${pedido.cliente.username || 'sin username'}`);
+    } else {
+      console.log(`   Cliente: ${pedido.cliente} (solo ID)`);
+    }
+  } else {
+    console.log("❌ Pedido no encontrado");
+  }
+
+  return pedido;
 }
-/**
-* Función para modificar un pedido existente en la base de datos
-utilizando su ID.
-* @param {Function} pedidoId
-* @param {*} param1
-* @returns {Promise<Pedido>} - Una promesa que resuelve en el
-pedido actualizado o null si no se encuentra.
-*/
+
 export async function modificaPedido(pedidoId, datosActualizados) {
-  return await Pedido.findOneAndUpdate(
+  console.log("\n🔍 MODIFICANDO PEDIDO:", pedidoId.slice(-6));
+  
+  const pedido = await Pedido.findOneAndUpdate(
     { _id: pedidoId },
-    { $set: datosActualizados }, //  Así acepta cualquier campo que llegue
-    { new: true },
-  );
+    { $set: datosActualizados },
+    { new: true }
+  ).populate({
+    path: 'cliente',
+    model: 'usuario',
+    select: 'username _id'
+  });
+
+  console.log("✅ Pedido modificado");
+  return pedido;
 }
-/**
-* Elimina un pedido de la base de datos utilizando su ID.
-* @param {*} pedidoId
-* @returns {Promise<Object>} - Una promesa que resuelve en el
-resultado de la operación de eliminación.
-*/
+
 export async function eliminaPedido(pedidoId) {
-  return await Pedido.deleteOne({ _id: pedidoId });
+  console.log("\n🔍 ELIMINANDO PEDIDO:", pedidoId.slice(-6));
+  
+  const result = await Pedido.deleteOne({ _id: pedidoId });
+  if (result.deletedCount > 0) {
+    console.log("✅ Pedido eliminado");
+  } else {
+    console.log("❌ Pedido no encontrado");
+  }
+  
+  return result;
 }
